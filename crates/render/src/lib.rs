@@ -85,6 +85,25 @@ impl Rendered {
         }
         buf
     }
+    /// PNG bytes with the resolution stored in a pHYs chunk, so other programs know the print size.
+    pub fn to_png_with_dpi(&self, dpi: f64) -> Vec<u8> {
+        let mut png = self.to_png();
+        // PNG signature (8 bytes) + IHDR chunk (4 length + 4 type + 13 data + 4 CRC) = 33 bytes.
+        if png.len() < 33 || !dpi.is_finite() || dpi <= 0.0 {
+            return png;
+        }
+        let ppm = (dpi / 0.0254).round() as u32; // pixels per metre
+        let mut chunk = Vec::with_capacity(21);
+        chunk.extend_from_slice(&9u32.to_be_bytes());
+        chunk.extend_from_slice(b"pHYs");
+        chunk.extend_from_slice(&ppm.to_be_bytes());
+        chunk.extend_from_slice(&ppm.to_be_bytes());
+        chunk.push(1); // unit: metre
+        let crc = png_crc32(&chunk[4..]);
+        chunk.extend_from_slice(&crc.to_be_bytes());
+        png.splice(33..33, chunk);
+        png
+    }
     pub fn to_jpeg(&self, quality: u8) -> Vec<u8> {
         let rgba = self.to_straight();
         let rgb: Vec<u8> = rgba
@@ -1273,6 +1292,18 @@ pub enum PdfRasterError {
 /// Reject oversized PDFs before placement, layer rewriting or output allocation.
 pub fn check_pdf_input_size(size: usize) -> Result<(), PdfRasterError> {
     craft_pdf::check_input_size(size).map_err(PdfRasterError::Input)
+}
+
+/// CRC-32 as PNG chunks use it (polynomial 0xEDB88320).
+fn png_crc32(bytes: &[u8]) -> u32 {
+    let mut crc = 0xFFFF_FFFFu32;
+    for &b in bytes {
+        crc ^= u32::from(b);
+        for _ in 0..8 {
+            crc = if crc & 1 != 0 { (crc >> 1) ^ 0xEDB8_8320 } else { crc >> 1 };
+        }
+    }
+    !crc
 }
 
 /// PDF page `page` as PNG, its longer side about `max_side` pixels, with the `hidden` layers off.

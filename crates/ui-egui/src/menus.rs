@@ -1977,7 +1977,7 @@ fn download_document(app: &mut DesignApp) -> Result<Value, String> {
 fn export_png(app: &mut DesignApp, p: &Value) -> Result<Value, String> {
     let st = app.session.active().ok_or("no document")?;
     let page = crate::control::page_index(p, crate::canvas::current_page(app).unwrap_or(0), st.doc.page_count())?;
-    let scale = p.get("scale").and_then(Value::as_f64).unwrap_or(2.0);
+    let scale = p.get("scale").and_then(Value::as_f64).unwrap_or(300.0 / 72.0);
     let mut r = designcraft_render::Renderer::new();
     let img = r
         .render_page(
@@ -1989,7 +1989,7 @@ fn export_png(app: &mut DesignApp, p: &Value) -> Result<Value, String> {
             &designcraft_render::RenderOptions { printing_only: true, rich_black: app.session.prefs.rich_black_output, ..Default::default() },
         )
         .ok_or("no such page")?;
-    let png = img.to_png();
+    let png = img.to_png_with_dpi(scale * 72.0);
     let path = match p.get("path").and_then(Value::as_str) {
         Some(s) => Some(s.to_string()),
         None => {
